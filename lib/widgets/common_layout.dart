@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 
+import '../theme/theme_provider.dart';
 import '../screens/auth_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/department_screen.dart';
+import '../providers/user_role_provider.dart';
 
 class CommonLayout extends StatelessWidget {
   final Widget body;
@@ -18,7 +22,8 @@ class CommonLayout extends StatelessWidget {
   final CollectionReference sectors =
       FirebaseFirestore.instance.collection('sectors');
 
-  void addSector(BuildContext context) async {
+  // 🔹 ADD SECTOR
+  void addSector(BuildContext context) {
     TextEditingController controller = TextEditingController();
 
     showDialog(
@@ -53,10 +58,25 @@ class CommonLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final roleProvider = context.watch<UserRoleProvider>();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
         actions: [
+          // 🌙 / ☀️ THEME TOGGLE
+          IconButton(
+            icon: Icon(
+              context.watch<ThemeProvider>().isDarkMode
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
+            ),
+            onPressed: () {
+              context.read<ThemeProvider>().toggleTheme();
+            },
+          ),
+
+          // ⚙️ SETTINGS
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
@@ -68,6 +88,8 @@ class CommonLayout extends StatelessWidget {
               );
             },
           ),
+
+          // 🚪 LOGOUT
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
@@ -83,28 +105,58 @@ class CommonLayout extends StatelessWidget {
         ],
       ),
 
+      // 📂 SIDEBAR
       drawer: Drawer(
         child: Column(
           children: [
             const DrawerHeader(
-              child: Text('Sectors', style: TextStyle(fontSize: 20)),
+              child: Text(
+                'Sectors',
+                style: TextStyle(fontSize: 20),
+              ),
             ),
 
+            // 🔹 SECTORS LIST
             Expanded(
               child: StreamBuilder(
-                stream: sectors.snapshots(),
+                stream: sectors.orderBy('name').snapshots(),
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
                   }
 
                   final docs = snapshot.data!.docs;
 
+                  if (docs.isEmpty) {
+                    return const Center(
+                      child: Text("No Sectors yet"),
+                    );
+                  }
+
                   return ListView.builder(
                     itemCount: docs.length,
                     itemBuilder: (context, index) {
+                      final doc = docs[index];
+                      final data =
+                          doc.data() as Map<String, dynamic>;
+
                       return ListTile(
-                        title: Text(docs[index]['name']),
+                        title: Text(data['name'] ?? "No Name"),
+                        onTap: () {
+                          Navigator.pop(context);
+
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => DepartmentScreen(
+                                sectorId: doc.id,
+                                sectorName: data['name'] ?? "Sector",
+                              ),
+                            ),
+                          );
+                        },
                       );
                     },
                   );
@@ -112,16 +164,21 @@ class CommonLayout extends StatelessWidget {
               ),
             ),
 
-            ListTile(
-              leading: const Icon(Icons.add),
-              title: const Text("Add Sector"),
-              onTap: () => addSector(context),
-            ),
+            // ➕ ADD SECTOR (ADMIN ONLY)
+            if (!roleProvider.isLoading && roleProvider.isAdmin)
+              ListTile(
+                leading: const Icon(Icons.add),
+                title: const Text("Add Sector"),
+                onTap: () => addSector(context),
+              ),
           ],
         ),
       ),
 
-      body: body,
+      // 📦 BODY
+      body: roleProvider.isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : body,
     );
   }
 }
